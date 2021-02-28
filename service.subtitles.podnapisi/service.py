@@ -3,12 +3,12 @@
 import os
 import sys
 import xbmc
-import urllib,urllib2
+import urllib, urllib.parse, urllib.request
 import xbmcvfs
 import xbmcaddon
 import xbmcgui,xbmcplugin,shutil
 from zipfile import ZipFile
-from cStringIO import StringIO
+from io import StringIO, BytesIO
 import uuid
 import re
 
@@ -19,14 +19,14 @@ __scriptname__ = __addon__.getAddonInfo('name')
 __version__    = __addon__.getAddonInfo('version')
 __language__   = __addon__.getLocalizedString
 
-__cwd__        = xbmc.translatePath( __addon__.getAddonInfo('path') ).decode("utf-8")
-__profile__    = xbmc.translatePath( __addon__.getAddonInfo('profile') ).decode("utf-8")
-__resource__   = xbmc.translatePath( os.path.join( __cwd__, 'resources', 'lib' ) ).decode("utf-8")
-__temp__       = xbmc.translatePath( os.path.join( __profile__, 'temp', '') ).decode("utf-8")
+__cwd__        = xbmcvfs.translatePath( __addon__.getAddonInfo('path') )
+__profile__    = xbmcvfs.translatePath( __addon__.getAddonInfo('profile') )
+__resource__   = xbmcvfs.translatePath( os.path.join( __cwd__, 'resources', 'lib' ) )
+__temp__       = xbmcvfs.translatePath( os.path.join( __profile__, 'temp', '') )
 
 sys.path.append (__resource__)
 
-from pn_utilities import PNServer, log, OpensubtitlesHash, normalizeString, languageTranslate, calculateSublightHash
+from pn_utilities import PNServer, log, OpensubtitlesHash, normalizeString, languageTranslate, calculateSublightHash, get_ssl_context
 
 def Search( item ):
 
@@ -46,11 +46,9 @@ def Search( item ):
   if subtitles_list:
     for it in subtitles_list:
       listitem = xbmcgui.ListItem(label=it["language_name"],
-                                  label2=it["filename"],
-                                  iconImage=it["rating"],
-                                  thumbnailImage=it["language_flag"]
+                                  label2=it["filename"]
                                   )
-
+      listitem.setArt({ "icon": it["rating"], "thumb": it["language_flag"]})
       listitem.setProperty( "sync", ("false", "true")[it["sync"]] )
       listitem.setProperty( "hearing_imp", ("false", "true")[it["hearing_imp"]] )
       
@@ -79,9 +77,9 @@ def Download(params):
 
   try:
     log( __scriptid__ ,"Extract using 'ZipFile' method")
-    response = urllib2.urlopen(url)
+    response = urllib.request.urlopen(url, context = get_ssl_context() )
     raw = response.read()      
-    archive = ZipFile(StringIO(raw), 'r')
+    archive = ZipFile(BytesIO(raw), 'r')
     files = archive.namelist()
     files.sort()
     index = 1
@@ -104,14 +102,14 @@ def Download(params):
     log( __scriptid__ ,"Extract using 'XBMC.Extract' method")
     exts = [".srt", ".sub", ".txt", ".smi", ".ssa", ".ass" ]
     zip = os.path.join( __temp__, "PN.zip")
-    f = urllib.urlopen(url)
+    f = urllib.request.urlopen(url, context= get_ssl_context() )
     with open(zip, "wb") as subFile:
       subFile.write(f.read())
     subFile.close()
     xbmc.sleep(500)
     xbmc.executebuiltin(('XBMC.Extract("%s","%s")' % (zip,__temp__,)).encode('utf-8'), True)
     for subfile in xbmcvfs.listdir(zip)[1]:
-      file = os.path.join(__temp__, subfile.decode('utf-8'))
+      file = os.path.join(__temp__, subfile)
       if (os.path.splitext( file )[1] in exts):
         subtitle_list.append(file)
 
@@ -151,10 +149,10 @@ if params['action'] == 'search':
   item['episode']            = str(xbmc.getInfoLabel("VideoPlayer.Episode"))                 # Episode
   item['tvshow']             = normalizeString(xbmc.getInfoLabel("VideoPlayer.TVshowtitle"))  # Show
   item['title']              = normalizeString(xbmc.getInfoLabel("VideoPlayer.OriginalTitle"))# try to get original title
-  item['file_original_path'] = urllib.unquote(xbmc.Player().getPlayingFile().decode('utf-8'))# Full path of a playing file
+  item['file_original_path'] = urllib.parse.unquote(xbmc.Player().getPlayingFile())# Full path of a playing file
   item['3let_language']      = [] #['scc','eng']
   
-  for lang in urllib.unquote(params['languages']).split(","):
+  for lang in urllib.parse.unquote(params['languages']).split(","):
     item['3let_language'].append(languageTranslate(lang,0,1))
   
   if item['title'] == "":

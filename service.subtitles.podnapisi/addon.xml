@@ -4,7 +4,7 @@
        version="5.4.2"
        provider-name="amet">
   <requires>
-    <import addon="xbmc.python" version="2.1.0"/>
+    <import addon="xbmc.python" version="3.0.0"/>
   </requires>
   <extension point="xbmc.subtitle.module"
              library="service.py" />
