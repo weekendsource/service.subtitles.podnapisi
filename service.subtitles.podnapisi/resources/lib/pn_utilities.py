@@ -2,12 +2,14 @@
 
 import sys
 import os
-import xmlrpclib
+import xmlrpc
 import unicodedata
 import struct
 from xml.dom import minidom
-import urllib, zlib
+import urllib, zlib, urllib.request
 import xbmc, xbmcvfs
+import ssl
+from functools import cmp_to_key
 
 try:
   # Python 2.6 +
@@ -100,18 +102,24 @@ LANGUAGES      = (
     (u"Chinese (Simplified)"       , "17",       "zh",            "chi",                 "100",                   30207  ) )
 
 
+def get_ssl_context():
+  ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)
+  ctx.set_ciphers('ALL:@SECLEVEL=1')
+  return ctx
+
+def cmp(a, b):
+  return (a > b) - (a < b) 
+
 def languageTranslate(lang, lang_from, lang_to):
   for x in LANGUAGES:
     if lang == x[lang_from] :
       return x[lang_to]
 
 def log(module, msg):
-  xbmc.log((u"### [%s] - %s" % (module,msg,)).encode('utf-8'),level=xbmc.LOGDEBUG ) 
+  xbmc.log(f'### {module} - {msg}' ,level=xbmc.LOGDEBUG ) 
 
 def normalizeString(str):
-  return unicodedata.normalize(
-         'NFKD', unicode(unicode(str, 'utf-8'))
-         ).encode('ascii','ignore')
+  return unicodedata.normalize( 'NFKD', str )
 
 def OpensubtitlesHash(item):
     try:
@@ -187,8 +195,7 @@ def invert(basestring):
   return ''.join(asal)
 
 def calculateSublightHash(filename):
-
-  DATA_SIZE = 128 * 1024;
+  DATA_SIZE = 128 * 1024 #128 Kb
 
   if not xbmcvfs.exists(filename) :
     return "000000000000"
@@ -210,19 +217,19 @@ def calculateSublightHash(filename):
   sum = sum + (filesize & 0xff) + ((filesize & 0xff00) >> 8) + ((filesize & 0xff0000) >> 16) + ((filesize & 0xff000000) >> 24)
   hash = hash + dec2hex(filesize, 12) 
   
-  buffer = fileToHash.read( DATA_SIZE )
+  buffer = fileToHash.readBytes( DATA_SIZE )
   begining = zlib.adler32(buffer) & 0xffffffff
   sum = sum + (begining & 0xff) + ((begining & 0xff00) >> 8) + ((begining & 0xff0000) >> 16) + ((begining & 0xff000000) >> 24)
   hash = hash + invert(dec2hex(begining, 8))
 
-  fileToHash.seek(filesize/2,0)
-  buffer = fileToHash.read( DATA_SIZE )
+  fileToHash.seek(filesize//2)
+  buffer = fileToHash.readBytes( DATA_SIZE )
   middle = zlib.adler32(buffer) & 0xffffffff
   sum = sum + (middle & 0xff) + ((middle & 0xff00) >> 8) + ((middle & 0xff0000) >> 16) + ((middle & 0xff000000) >> 24)
   hash = hash + invert(dec2hex(middle, 8))
 
   fileToHash.seek(filesize-DATA_SIZE,0)
-  buffer = fileToHash.read( DATA_SIZE )
+  buffer = fileToHash.readBytes( DATA_SIZE )
   end = zlib.adler32(buffer) & 0xffffffff
   sum = sum + (end & 0xff) + ((end & 0xff00) >> 8) + ((end & 0xff0000) >> 16) + ((end & 0xff000000) >> 24)
   hash = hash + invert(dec2hex(end, 8))
@@ -241,7 +248,7 @@ class PNServer:
     # Currently, login is disabled
     return
 
-    self.podserver   = xmlrpclib.Server('http://ssp.podnapisi.net:8000')
+    self.podserver   = xmlrpc.client.Server('http://ssp.podnapisi.net:8000')
     init        = self.podserver.initiate(USER_AGENT)  
     hash        = md5()
     hash.update(__addon__.getSetting( "PNpass" ))
@@ -292,21 +299,21 @@ class PNServer:
     if len(item['tvshow']) > 1:
       item['title'] = item['tvshow']
 
-    selected_languages = ','.join([i for i in item['3let_language'] if isinstance(i, basestring)])
+    selected_languages = ','.join([i for i in item['3let_language'] if isinstance(i, str)])
 
     if (__addon__.getSetting("PNmatch") == 'true'):
       url =  SEARCH_URL_IMDB_HASH % (item['imdb'],
                                     selected_languages,
                                     str(item['season']),
                                     str(item['episode']),
-                                    '%s,sublight:%s,sublight:%s' % (item['OShash'],item['SLhash'],md5(item['SLhash']).hexdigest() )
+                                    '%s,sublight:%s,sublight:%s' % (item['OShash'],item['SLhash'],md5(item['SLhash'].encode('utf-8')).hexdigest() )
                                     )
       fallback_url =  SEARCH_URL_HASH % (item['title'].replace(" ","+"),
                                          selected_languages,
                                          str(item['year']),
                                          str(item['season']),
                                          str(item['episode']),
-                                         '%s,sublight:%s,sublight:%s' % (item['OShash'],item['SLhash'],md5(item['SLhash']).hexdigest() )
+                                         '%s,sublight:%s,sublight:%s' % (item['OShash'],item['SLhash'],md5(item['SLhash'].encode('utf-8')).hexdigest() )
                                          )
     else:
       url =  SEARCH_URL_IMDB % (item['imdb'],
@@ -346,7 +353,7 @@ class PNServer:
     return self.subtitles_list
   
   def Download(self,params):
-    print params
+    print(params)
     subtitle_ids = []
     # if (__addon__.getSetting("PNmatch") == 'true' and params["hash"] != "000000000000"):
     #   self.Login()
@@ -367,7 +374,7 @@ class PNServer:
       return ""  
 
   def fetch(self,url):
-    socket = urllib.urlopen( url )
+    socket = urllib.request.urlopen( url, context = get_ssl_context() )
     result = socket.read()
     socket.close()
     xmldoc = minidom.parseString(result)
@@ -378,5 +385,7 @@ class PNServer:
 
   def mergesubtitles(self):
     if( len ( self.subtitles_list ) > 0 ):
-      self.subtitles_list = sorted(self.subtitles_list, self.compare_columns)
+      self.subtitles_list = sorted(self.subtitles_list, key=cmp_to_key(self.compare_columns))
+
+
        

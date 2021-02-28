@@ -1,3 +1,9 @@
+Podnapisi.NET KODI add-on
+=============================
+Search and download subtitles for movies and TV-Series from Podnapisi.NET
+                            
+Changelog
+
 5.5.0
 - ported to python3 for matrix (by corinzio)
 
