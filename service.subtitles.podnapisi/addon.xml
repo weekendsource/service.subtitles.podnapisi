@@ -17,6 +17,11 @@
     <forum>http://forum.kodi.tv/showthread.php?tid=192563</forum>
     <website></website>
     <email></email>
+    <assets>
+            <icon>icon.png</icon>
+            <fanart>logo.png</fanart>
+      <screenshot>resources/media/titlovi_com_screenshot.jpg</screenshot>
+    </assets>
     <source>https://github.com/corinzio/service.subtitles.podnapisi.git</source>
   </extension>
 </addon>
